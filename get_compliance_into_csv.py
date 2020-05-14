@@ -203,7 +203,10 @@ def region_from_environment(environment):
     """
     provider_opts = environment['provider_options']
     if environment['provider'] == 'aws':
-        return provider_opts['aws']['region']
+        if 'region' in provider_opts['aws']:
+            return provider_opts['aws']['region']
+        else:
+            return ','.join(provider_opts['aws']['regions'])
     elif environment['provider'] == 'aws_govcloud':
         return provider_opts['aws_govcloud']['region']
     return '-'
@@ -252,7 +255,7 @@ def value_or_default(value, default='-'):
 
 
 def csv(values):
-    return ",".join(values)
+    return ",".join(['"%s"' % v for v in values])
 
 
 def format(record, fmt='csv'):
