@@ -107,7 +107,7 @@ def format_message(message):
     Ensures the message does not have commas since that would interfere with
     CSV formatting.
     """
-    return message.replace(',', ' ')
+    return message.replace(',', ' ').replace('"', '')
 
 
 def records_from_failed_type(family, control, failure):
@@ -203,7 +203,10 @@ def region_from_environment(environment):
     """
     provider_opts = environment['provider_options']
     if environment['provider'] == 'aws':
-        return provider_opts['aws']['region']
+        if 'region' in provider_opts['aws']:
+            return provider_opts['aws']['region']
+        else:
+            return ','.join(provider_opts['aws']['regions'])
     elif environment['provider'] == 'aws_govcloud':
         return provider_opts['aws_govcloud']['region']
     return '-'
@@ -251,13 +254,32 @@ def value_or_default(value, default='-'):
     return default
 
 
+def quote_csv_value(value):
+    """
+    Surrounds a string value with quoting to avoid excel autoformatting.
+    Ref: https://stackoverflow.com/a/165052/9806588
+    """
+    if len(value) < 64:
+        return '"=""%s"""' % value
+    return value
+
+
 def csv(values):
     return ",".join(values)
 
 
+def format_value(column_name, value):
+    # All columns but the message column should be wrapped with double quotes
+    # to avoid excel autoformatting behavior.
+    value = value_or_default(value)
+    if column_name != 'message':
+        value = quote_csv_value(value)
+    return ' '.join(value.split())
+
+
 def format(record, fmt='csv'):
     if fmt == 'csv':
-        return csv([value_or_default(record[col]) for col in COLUMNS])
+        return csv([format_value(col, record[col]) for col in COLUMNS])
     else:
         return json.dumps(record)
 
