@@ -6,29 +6,30 @@ import requests
 
 # Common parameters that can be configured as needed 
 
-# provider: Either aws or aws_govcloud - Azure is not supported currently by this script
-# region: Region for the environment in the given account. Multiple regions format ["us-east-1", "us-east-2"] 
+# provider: aws - AWS Govcloud and Azure are not supported currently by this script
+# region: Region for the environment in the given account. "*" indicates all supported regions by Fugue. 
+# Multiple regions format ["us-east-1", "us-east-2"] 
 # https://docs.fugue.co/faq.html#what-aws-and-aws-govcloud-regions-does-fugue-support
 # interval: scan interval in seconds. Default is 24hrs 
 # rolename: Name of the IAM Role created in the accounts. This assumes the roles have already been created with the 
 # required permission for each of the accounts already exist in the target AWS accounts with the correct policy attached 
 # resource_types: List of resources for the given environment. The default value is ALL and that will invoke another Fugue API call
 # to retrieve the supported list of resources from the API directly. You can specify a 
-# limited set of resource types using this syntax  ["AWS.ACM.Certificate", "AWS.ACMPCA.CertificateAuthority"] 
+# limited set of resource types using this syntax ["AWS.ACM.Certificate", "AWS.ACMPCA.CertificateAuthority"] 
 # https://docs.fugue.co/servicecoverage.html  
 # compliance_families: List of complaince families needed https://docs.fugue.co/api.html#api-compliance-format
 # accounts: map of AWS Account Name and Account numbers that needed to be loaded into Fugue. Environments are created with the
 # names in the format "Name - id - region" 
 
 provider = "aws"
-regions = ["us-east-1", "us-east-2", "us-west-1", "us-west-2"]
+regions = ["*"]
 rolename = "FugueRiskManager"
 interval = "86400"
-resource_types = "All" 
-compliance_families = ["FBP","CIS"]
+resource_types = ["All"] 
+compliance_families = ["FBP","CIS", "CISCONTROLS"]
 accounts = {
-    "Main Account": "123456",
-    "Demo Account": "987654"
+    "Prod Account": "1234",
+    "Dev Account": "5678"
 }
 
 # Fugue API base URL
@@ -72,16 +73,16 @@ def get_resource_types(resource_types, region, provider):
     Executes an authenticated GET request to Fugue API to retrieve entire list
     of supported resource types if value is set to "All"
     """
-    if resource_types == "All":
+    if resource_types == ["All"]:
         params = {
         'region': region,
         'beta_resources': "true"
-    }
+        }
         survey_resource_types = get('metadata/' + provider + '/resource_types', params=params)['resource_types']
     else: 
         survey_resource_types = resource_types
 
-    return survey_resource_types    
+    return survey_resource_types
 
 def create_aws_env_def(env_name, provider, region, accountid, resource_types, compliance_families, rolename, interval=0):
     if interval != 0:
@@ -94,7 +95,7 @@ def create_aws_env_def(env_name, provider, region, accountid, resource_types, co
         "provider": provider,
         "provider_options": {
             provider: {
-            "region": region,
+            "regions": [region],
             "role_arn": "arn:aws:iam::" + accountid + ":role/" + rolename
             }
         },
@@ -111,35 +112,41 @@ def main():
     Loop through each account and region to create an environment using Fugue API
     https://docs.fugue.co/api.html#example-create
     """
-    if provider.lower() == "azure":
-        print ("This script is only for AWS and AWS GovCloud environment creation")
+    if provider.lower() == "azure" or provider.lower() == "aws_govcloud":
+        print ("This script is only for AWS environment creation")
     else:
         for name, acct_id in accounts.items():
-            if provider.lower() == "azure":
-                print ("This script is only for AWS and AWS GovCloud environment creation")
+            if provider.lower() == "azure" or provider.lower() == "aws_govcloud":
+                print ("This script is only for AWS environment creation")
                 break
                     
             for region in regions: 
                 # Set environment name
-                env_name = name + " - " + acct_id + " - " + region
+                if region == "*": 
+                    env_name = name + " - " + acct_id + " - " + "All Regions"
+                else:
+                    env_name = name + " - " + acct_id + " - " + region
                 print("Starting on creation for environment " + env_name + " and id: " + acct_id +  " and region: " + region)
                     
                 # Get resource types from Fugue API based on provider and region
-                survey_resource_types = get_resource_types (resource_types, region.lower(), provider.lower())
+                if region != "*":
+                    survey_resource_types = get_resource_types(resource_types, region.lower(), provider.lower())
+                else:
+                    survey_resource_types = get_resource_types(resource_types, "us-east-1", provider.lower())    
                 print("Resource types created for environment " + env_name + " and id: " + acct_id +  " and region: " + region)
-
+              
                 # Create JSON body  
                 env_def = create_aws_env_def(env_name, provider.lower(), region.lower(), acct_id, survey_resource_types, compliance_families, rolename, interval)
                 print ("JSON body created for environment " + env_name + " and region: " + region)
                 print ("Creating environment for " + env_name + " and id: " + acct_id +  " and region: " + region)
-
-                # Create environment
+                
+                #Create environment
                 resp = create_env('environments', env_def)
                     
                 if resp.status_code != 201:
                     print('Environment creation failed for Account: ' + acct_id + ' with response code: {}'.format(resp.status_code) + ' and reason: {}'.format(resp.text) + "\n") 
                 else:
-                    env_id =resp.json()['id'] 
+                    env_id = resp.json()['id'] 
                     print ('Environment created for Account: ' + acct_id + ' with environment name: ' + resp.json()['name'] + ' and environment id: ' + resp.json()['id'] + "\n") 
 
 if __name__ == '__main__':
