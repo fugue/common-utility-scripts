@@ -9,7 +9,8 @@ import boto3
 # Common parameters that can be configured as needed 
 
 # provider: Either aws or aws_govcloud - Azure is not supported currently by this script
-# region: Region for the environment in the given account https://docs.fugue.co/faq.html#what-aws-and-aws-govcloud-regions-does-fugue-support
+# region: Region for the environment in the given account. "*" indicates all supported regions by Fugue. 
+# Multiple regions format ["us-east-1", "us-east-2"] 
 # interval: scan interval in seconds. Default is 24hrs 
 # rolename: Name of the IAM Role created in the accounts. This assumes the roles have already been created with the 
 # required permission for each of the accounts 
@@ -21,11 +22,11 @@ import boto3
 # compliance_families: List of complaince families needed https://docs.fugue.co/api.html#api-compliance-format
 # aws_profile_name: the profile name for AWS Org that allows the script to extract the list of active AWS accounts 
 
-provider = "AWS"
-regions = ["us-east-1"]
+provider = "aws"
+regions = ["*"]
 rolename = "FugueRiskManager"
 interval = "86400"
-resource_types = "All" 
+resource_types = ["All"] 
 compliance_families = ["FBP","CIS"]
 aws_profile_name = "fugueorg"
 
@@ -109,7 +110,7 @@ def create_aws_env_def(env_name, provider, region, accountid, resource_types, co
         "provider": provider,
         "provider_options": {
             provider: {
-            "region": region,
+            "regions": region,
             "role_arn": "arn:aws:iam::" + accountid + ":role/" + rolename
             }
         },
@@ -127,19 +128,25 @@ def main():
     https://docs.fugue.co/api.html#example-create
     """
     
-if provider.lower() == "azure":
-    print ("This script is only for AWS and AWS GovCloud environment creation")
+if provider.lower() == "azure" or provider.lower() == "aws_govcloud":
+        print ("This script is only for AWS environment creation")
 else:
     accounts= get_accounts_from_org(aws_profile_name)
     
     for name, acct_id in accounts.items():
         for region in regions: 
             # Set environment name
-            env_name = name + " - " + acct_id + " - " + region
+           if region == "*": 
+                    env_name = name + " - " + acct_id + " - " + "All Regions"
+                else:
+                    env_name = name + " - " + acct_id + " - " + region
             print("Starting on creation for environment " + env_name + " and id: " + acct_id +  " and region: " + region)
                 
             # Get resource types from Fugue API based on provider and region
-            survey_resource_types = get_resource_types (resource_types, region.lower(), provider.lower())
+            if region != "*":
+                    survey_resource_types = get_resource_types(resource_types, region.lower(), provider.lower())
+            else:
+                    survey_resource_types = get_resource_types(resource_types, "us-east-1", provider.lower())    
             print("Resource types created for environment " + env_name + " and id: " + acct_id +  " and region: " + region)
 
             # Create JSON body  
