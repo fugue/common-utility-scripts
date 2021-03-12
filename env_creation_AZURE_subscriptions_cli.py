@@ -10,8 +10,8 @@ import getpass
 # interval: scan interval in seconds. Default is 24hrs 
 # compliance_families: List of complaince families needed https://docs.fugue.co/api.html#api-compliance-format
 # subscriptions: map of Azure Application Name, credentials and Resource Groups that need to be loaded into Fugue.
-# Format "App Name": ["Tenant Id", "Subscription Id", "Application ID", "Client Secret", [Resource Groups]].
-# Client Secret can be left blank or set to "-" if the CLI opted value needs to be used
+# Format "App Name": ["Tenant Id", "Subscription Id", "Application ID", [Resource Groups]].
+# Client Secret will be prompted at command prompt
 # Default for Resource Group value is "*" for automatically discovering and adding all resource groups. 
 # For selective resource groups, use the format ["example-rg","another-rg"] 
 # Environments are created with the App name. Details on how to create these: https://docs.fugue.co/setupazure.html#step-2a-connect-to-azure
