@@ -29,7 +29,7 @@ regions = ["*"]
 rolename = "FugueRiskManager"
 interval = "86400"
 resource_types = ["All"] 
-compliance_families = ["FBP","CIS", "CISCONTROLS"]
+compliance_families = ["CIS"]
 allow_dups = False
 accounts = {
     "Prod Account": "1234",
@@ -68,19 +68,30 @@ def get_account_list(provider):
     """
         Get list of AWS environments in Fugue tenant and extract the Account IDs from the Role ARN.   
     """
-    params = {
-        'q.provider': provider,
-    }
-    try:
-        env_list = get('environments', params=params)
-    except Exception as error: 
-            sys.exit("Error:" + error) 
-    else: 
-        account_id_list = []
-        for env in env_list['items']:
-            account_id_list.append(env['provider_options']['aws']['role_arn'].split(':')[4])
-        
-        return account_id_list
+    offset = 0
+    max_items = 100
+    account_id_list = []
+    env_id = []
+    is_truncated = True
+    
+    while is_truncated: 
+        params = {
+            'q.provider': provider,
+            'offset' : offset,
+            'max_items' : max_items,
+        }
+        try:
+            env_list = get('environments', params=params)
+        except Exception as error: 
+                sys.exit("Error:" + error) 
+        else: 
+            for env in env_list['items']:
+                account_id_list.append(env['provider_options']['aws']['role_arn'].split(':')[4])
+                print (env['provider_options']['aws']['role_arn'].split(':')[4])
+            offset = env_list['next_offset']
+            is_truncated = env_list['is_truncated']
+
+    return account_id_list
     
 def create_env(path, json=None):
     """
