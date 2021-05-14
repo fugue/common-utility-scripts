@@ -61,19 +61,29 @@ def get_app_list(provider):
     """
         Get list of Azure environments in Fugue tenant and extract the Applications IDs from the credentials.   
     """
-    params = {
-        'q.provider': provider,
-    }
-    try:
-        env_list = get('environments', params=params)
-    except Exception as error: 
-            sys.exit("Error:" + error) 
-    else: 
-        app_id_list = []
-        for env in env_list['items']:
-            app_id_list.append(env['provider_options']['azure']['application_id'])
-       
-        return app_id_list
+    offset = 0
+    max_items = 1
+    app_id_list = []
+    env_id = []
+    is_truncated = True
+    
+    while is_truncated: 
+        params = {
+            'q.provider': provider,
+            'offset' : offset,
+            'max_items' : max_items,
+        }
+        try:
+            env_list = get('environments', params=params)
+        except Exception as error: 
+                sys.exit("Error:" + error) 
+        else: 
+            for env in env_list['items']:
+                app_id_list.append(env['provider_options']['azure']['application_id'])
+            offset = env_list['next_offset']
+            is_truncated = env_list['is_truncated']
+    
+    return app_id_list
 
 def create_env(path, json=None):
     """
