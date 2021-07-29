@@ -88,7 +88,7 @@ def get_resource_types(resource_types, region, provider):
     Executes an authenticated GET request to Fugue API to retrieve entire list
     of supported resource types if value is set to "All"
     """
-    if resource_types == "All":
+    if resource_types == ["All"]:
         params = {
         'region': region,
         'beta_resources': "true"
@@ -110,7 +110,7 @@ def create_aws_env_def(env_name, provider, region, accountid, resource_types, co
         "provider": provider,
         "provider_options": {
             provider: {
-            "regions": region,
+            "regions": [region],
             "role_arn": "arn:aws:iam::" + accountid + ":role/" + rolename
             }
         },
@@ -136,10 +136,10 @@ else:
     for name, acct_id in accounts.items():
         for region in regions: 
             # Set environment name
-           if region == "*": 
-                    env_name = name + " - " + acct_id + " - " + "All Regions"
-                else:
-                    env_name = name + " - " + acct_id + " - " + region
+            if region == "*": 
+                env_name = name + " - " + acct_id + " - " + "All Regions"
+            else:
+                env_name = name + " - " + acct_id + " - " + region
             print("Starting on creation for environment " + env_name + " and id: " + acct_id +  " and region: " + region)
                 
             # Get resource types from Fugue API based on provider and region
