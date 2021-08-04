@@ -20,6 +20,9 @@ import boto3
 # You can specify a limited set of resource types using this syntax  ["AWS.ACM.Certificate", "AWS.ACMPCA.CertificateAuthority"] 
 # https://docs.fugue.co/servicecoverage.html  
 # compliance_families: List of complaince families needed https://docs.fugue.co/api.html#api-compliance-format
+# allow_dups: Default = False. Flag to allow duplicate environment creation in Fugue. 
+    # If set to False, a list of existing environment will be retrieved from Fugue and only accounts not in Fugue will be created.  
+
 # aws_profile_name: the profile name for AWS Org that allows the script to extract the list of active AWS accounts 
 
 provider = "aws"
@@ -27,7 +30,8 @@ regions = ["*"]
 rolename = "FugueRiskManager"
 interval = "86400"
 resource_types = ["All"] 
-compliance_families = ["FBP","CIS"]
+compliance_families = ["FBP","CIS-AWS_v1.3.0"]
+allow_dups = False
 aws_profile_name = "fugueorg"
 
 # Fugue API base URL
@@ -65,6 +69,7 @@ def get_accounts_from_org(profile):
         id = account["Id"]
         if account["Status"] == "ACTIVE":
             accounts_list[name] = id
+            
     return accounts_list
 
 def get(path, params=None):
@@ -74,6 +79,34 @@ def get(path, params=None):
     """
     url = '%s/%s/%s' % (api_url, api_ver, path.strip('/'))
     return requests.get(url, params=params, auth=auth).json()
+
+def get_account_list(provider):
+    """
+        Get list of AWS environments in Fugue tenant and extract the Account IDs from the Role ARN.   
+    """
+    offset = 0
+    max_items = 100
+    account_id_list = []
+    env_id = []
+    is_truncated = True
+    
+    while is_truncated: 
+        params = {
+            'q.provider': provider,
+            'offset' : offset,
+            'max_items' : max_items,
+        }
+        try:
+            env_list = get('environments', params=params)
+        except Exception as error: 
+                sys.exit("Error:" + error) 
+        else: 
+            for env in env_list['items']:
+                account_id_list.append(env['provider_options']['aws']['role_arn'].split(':')[4])
+            offset = env_list['next_offset']
+            is_truncated = env_list['is_truncated']
+
+    return account_id_list
 
 def create_env(path, json=None):
     """
@@ -133,35 +166,46 @@ if provider.lower() == "azure" or provider.lower() == "aws_govcloud":
 else:
     accounts= get_accounts_from_org(aws_profile_name)
     
+    # If allow_dups = False, get list of AWS envrionments from Fugue and extract the AWS account ID from Role ARN
+    if allow_dups == False:
+        print ("Duplicate environments are not allowed." + "\n" + "Retrieving list of environments and account numbers" + "\n") 
+        existing_account_list = get_account_list(provider)  
+        print ("Existing account list retrieved (" + str(len(existing_account_list)) + ")" + "\n")   
+
     for name, acct_id in accounts.items():
-        for region in regions: 
-            # Set environment name
-            if region == "*": 
-                env_name = name + " - " + acct_id + " - " + "All Regions"
-            else:
-                env_name = name + " - " + acct_id + " - " + region
-            print("Starting on creation for environment " + env_name + " and id: " + acct_id +  " and region: " + region)
-                
-            # Get resource types from Fugue API based on provider and region
-            if region != "*":
-                    survey_resource_types = get_resource_types(resource_types, region.lower(), provider.lower())
-            else:
-                    survey_resource_types = get_resource_types(resource_types, "us-east-1", provider.lower())    
-            print("Resource types created for environment " + env_name + " and id: " + acct_id +  " and region: " + region)
+        if allow_dups == False and acct_id in existing_account_list:   
+            print ("Found Acct id in existing environment list. Skipping environment creation for: " + name + ": " + acct_id)
+        else:
+            print ("Creating environment for account id: " + acct_id)            
+            
+            for region in regions: 
+                # Set environment name
+                if region == "*": 
+                    env_name = name + " - " + acct_id + " - " + "All Regions"
+                else:
+                    env_name = name + " - " + acct_id + " - " + region
+                print("Starting on creation for environment " + env_name + " and id: " + acct_id +  " and region: " + region)
+                    
+                # Get resource types from Fugue API based on provider and region
+                if region != "*":
+                        survey_resource_types = get_resource_types(resource_types, region.lower(), provider.lower())
+                else:
+                        survey_resource_types = get_resource_types(resource_types, "us-east-1", provider.lower())    
+                print("Resource types created for environment " + env_name + " and id: " + acct_id +  " and region: " + region)
 
-            # Create JSON body  
-            env_def = create_aws_env_def(env_name, provider.lower(), region.lower(), acct_id, survey_resource_types, compliance_families, rolename, interval)
-            print ("JSON body created for environment " + env_name + " and region: " + region)
-            print ("Creating environment for " + env_name + " and id: " + acct_id +  " and region: " + region)
-
-            # Create environment
-            resp = create_env('environments', env_def)
+                # Create JSON body  
+                env_def = create_aws_env_def(env_name, provider.lower(), region.lower(), acct_id, survey_resource_types, compliance_families, rolename, interval)
+                print ("JSON body created for environment " + env_name + " and region: " + region)
+                print ("Creating environment for " + env_name + " and id: " + acct_id +  " and region: " + region)
                 
-            if resp.status_code != 201:
-                print('Environment creation failed for Account: ' + acct_id + ' with response code: {}'.format(resp.status_code) + ' and reason: {}'.format(resp.text) + "\n") 
-            else:
-                env_id =resp.json()['id'] 
-                print ('Environment created for Account: ' + acct_id + ' with environment name: ' + resp.json()['name'] + ' and environment id: ' + resp.json()['id'] + "\n") 
+                # Create environment
+                resp = create_env('environments', env_def)
+                    
+                if resp.status_code != 201:
+                    print('Environment creation failed for Account: ' + acct_id + ' with response code: {}'.format(resp.status_code) + ' and reason: {}'.format(resp.text) + "\n") 
+                else:
+                    env_id =resp.json()['id'] 
+                    print ('Environment created for Account: ' + acct_id + ' with environment name: ' + resp.json()['name'] + ' and environment id: ' + resp.json()['id'] + "\n") 
  
 if __name__ == '__main__':
     main()            
