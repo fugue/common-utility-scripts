@@ -1,5 +1,5 @@
 # This script is for Python v.3.6 and above and also requires Requests module, Google Cloud SDK installed (https://cloud.google.com/sdk/docs/install) 
-# and Resource Manager Python CLI installed (pip install google-cloud-resource-manager)
+# and pip install google-cloud-resource-manager==0.30.3 installed
 
 import json
 import os
@@ -8,10 +8,11 @@ from google.cloud import resource_manager
 
 # Common parameters that can be configured as needed 
 
-# provider: agoogle - Others are not supported currently by this script
+# provider: google - Others are not supported currently by this script
 # interval: scan interval in seconds. Default is 24hrs 
-# service_account_email: Service account email created for onboarding projects. This assumes the service account has already been created with the 
-    # required permission for each of the projects and it already exists in the target Org 
+# service_account_email: Service account email created for onboarding projects. Instructions here: https://docs.fugue.co/setup-google.html#adding-a-google-organization-level-service-account
+    # This assumes the service account has already been created with the required permission for each of the projects and it already exists in the target Org 
+# service_account_email_keyfile: path to JSON key file generated for the service account using the instructions here: https://cloud.google.com/docs/authentication/production#cloud-console     
 # compliance_families: List of complaince families needed https://docs.fugue.co/api.html#api-compliance-format
 # projects: map of Google Cloud project names and Ids that needed to be loaded into Fugue. Environments are created with the
     # names in the format "Name - id" 
@@ -20,7 +21,8 @@ from google.cloud import resource_manager
 
 
 provider = "google"
-service_account_email = "<service account email>"
+service_account_email = "service-account@abc.iam.gserviceaccount.com"
+service_account_email_keyfile = "path to JSON key file"
 interval = "86400"
 compliance_families = ["CIS-Google_v1.1.0"]
 allow_dups = False
@@ -53,14 +55,15 @@ def get_projects_from_org():
     projects_in_org = []
     project_list = {}
     env_filter = {'lifecycleState': 'Active'}
-    org_client = resource_manager.Client()
+    org_client = resource_manager.Client.from_service_account_json(service_account_email_keyfile)
     response = org_client.list_projects(env_filter)
-   
+
     for project in response:
         name = project.name
         id = project.project_id
-        project_list[project.name] = id
-
+        project_list[name] = id
+    print ("TOTAL ACTIVE PROJECTS: " + str(response.num_results))
+    print (project_list)
     return project_list
 
 def get(path, params=None):
@@ -73,7 +76,7 @@ def get(path, params=None):
 
 def get_project_list(provider):
     """
-        Get list of AWS environments in Fugue tenant and extract the Account IDs from the Role ARN.   
+        Get list of Google environments in Fugue tenant and extract the Account IDs from the Role ARN.   
     """
     offset = 0
     max_items = 100
@@ -94,6 +97,7 @@ def get_project_list(provider):
         else: 
             for env in env_list['items']:
                 project_id_list.append(env['provider_options']['google']['project_id'])
+                print (env['provider_options']['google']['project_id'])
             offset = env_list['next_offset']
             is_truncated = env_list['is_truncated']
 
@@ -135,22 +139,22 @@ def main():
     https://docs.fugue.co/api.html#example-create
     """
     if provider.lower() != "google":
-        print ("This script is only for AWS environment creation")
+        print ("This script is only for Google environment creation")
     else:
-        # If allow_dups = False, get list of AWS envrionments from Fugue and extract the AWS account ID from Role ARN
+        # If allow_dups = False, get list of Google envrionments from Fugue and extract the project ID 
         if allow_dups == False:
            print ("Duplicate environments are not allowed. Retrieving list of environments and project ids" + "\n") 
            existing_project_list = get_project_list(provider)  
            print ("Existing project list retrieved (" + str(len(existing_project_list)) + ")" + "\n")   
         
-        projects = get_projects_from_org()
+        projects= get_projects_from_org()
 
         for name, proj_id in projects.items():
             if allow_dups == False and proj_id in existing_project_list:   
                 print ("Found project id in existing environment list. Skipping environment creation for - " + name + ": " + proj_id)
             else:
                 print ("Creating env for: " + proj_id)
-                env_name = proj_id
+                env_name = name + " - " + proj_id
                 print("Starting on creation for environment " + env_name + " and id: " + proj_id)
                         
                 # Create JSON body  
